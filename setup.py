@@ -50,6 +50,7 @@ setup(
     long_description=README,
     package_data={"": ["LICENSE.txt"], PACKAGE_NAME: ["*.ini"]},
     packages=find_packages(exclude=["tests", "tests.*"]),
+    data_files=[("images", ["praw/images/PRAW logo.png"])],
     setup_requires=["pytest-runner >=2.1"],
     tests_require=[
         "betamax >=0.8, <0.9",
