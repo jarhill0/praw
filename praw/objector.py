@@ -109,6 +109,8 @@ class Objector:
         elif {"authorFlairType", "name"}.issubset(data):
             # discards flair information
             return self._reddit.redditor(data["name"])
+        elif {"short_name", "violation_reason"}.issubset(data):
+            parser = self.parsers["rule"]
         elif {"parent_id"}.issubset(data):
             parser = self.parsers[self._reddit.config.kinds["comment"]]
         elif "collection_id" in data.keys():
@@ -155,6 +157,8 @@ class Objector:
                 # The URL is the URL to the submission, so it's removed.
                 del data["json"]["data"]["url"]
                 parser = self.parsers[self._reddit.config.kinds["submission"]]
+            elif "rules" in data["json"]["data"]:  # Rule.update/Rule.add
+                parser = self.parsers["rule"]
             else:
                 parser = self.parsers["LiveUpdateEvent"]
             return parser.parse(data["json"]["data"], self._reddit)
