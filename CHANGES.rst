@@ -1,6 +1,13 @@
 Change Log
 ==========
 
+Unreleased
+----------
+
+**Added**
+
+* :class:`.Rule` to represent one rule of a subreddit.
+
 7.0.0 (2020/04/24)
 ------------------
 
