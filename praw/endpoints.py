@@ -142,6 +142,7 @@ API_PATH = {
     "removal_reasons_list":    "api/v1/{subreddit}/removal_reasons",
     "remove_subreddit_rule":   "api/remove_subreddit_rule",
     "remove":                  "api/remove/",
+    "reorder_subreddit_rules": "api/reorder_subreddit_rules",
     "report":                  "api/report/",
     "rules":                   "r/{subreddit}/about/rules",
     "save":                    "api/save/",

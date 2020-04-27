@@ -1,5 +1,7 @@
 """Provide the Reason class."""
-from typing import Any, Dict, Generator, Optional, TypeVar
+from json import loads
+from typing import Dict, Generator, List, Optional, TypeVar, Union
+from urllib.parse import quote
 
 from ...const import API_PATH
 from ...exceptions import ClientException
@@ -24,11 +26,11 @@ class Rule(RedditBase):
     ======================= ===================================================
     Attribute               Description
     ======================= ===================================================
-    ``created_utc``         Time the submission was created, represented in
+    ``created_utc``         Time the rule was created, represented in
                             `Unix Time`_.
     ``description``         The description of the rule, if provided, otherwise
                             a blank string.
-    ``kind``                The kind of rule. Can be `submission`, `comment`,
+    ``kind``                The kind of rule. Can be `link`, `comment`,
                             or `all`.
     ``priority``            Represents where the rule is ranked. For example,
                             the first rule is at priority ``0``.
@@ -48,10 +50,12 @@ class Rule(RedditBase):
         self,
         reddit: Reddit,
         subreddit: Subreddit,
-        short_name: str,
-        _data: Optional[Dict[str, Any]] = None,
+        short_name: Optional[str] = None,
+        _data: Optional[Dict[str, str]] = None,
     ):
         """Construct an instance of the Rule object."""
+        if (short_name, _data).count(None) != 1:
+            raise ValueError("Either short_name or _data needs to be given.")
         self.short_name = short_name
         self.subreddit = subreddit
         super().__init__(reddit, _data=_data)
@@ -79,9 +83,7 @@ class Rule(RedditBase):
 
         """
         data = {"r": str(self.subreddit), "short_name": self.short_name}
-        self.subreddit._reddit.post(
-            API_PATH["remove_subreddit_rule"], data=data
-        )
+        self._reddit.post(API_PATH["remove_subreddit_rule"], data=data)
 
     def update(
         self,
@@ -97,7 +99,7 @@ class Rule(RedditBase):
 
         :param description: The new description for the rule. Can be empty.
         :param kind: The kind of item that the rule applies to. One of
-            ``submission``, ``comment``, or ``all``.
+            ``link``, ``comment``, or ``all``.
         :param short_name: The name of the rule.
         :param violation_reason: The reason that is shown on the report menu.
 
@@ -118,19 +120,27 @@ class Rule(RedditBase):
             "violation_reason": violation_reason,
         }.items():
             data[name] = getattr(self, name) if value is None else value
-        updated_rule = self.subreddit._reddit.post(
-            API_PATH["update_subreddit_rule"], data=data
+        updated_rule = self._reddit.request(
+            "POST", API_PATH["update_subreddit_rule"], data=data
         )
-        self.__dict__.update(updated_rule.__dict__)
+        self._reddit._objector.objectify(updated_rule)
+        # We want any errors to be passed, but we don't want to use the
+        # objected value because it returns a LiveThread.
+        rule_data = loads(updated_rule["json"]["data"]["rules"])[0]
+        return Rule(self._reddit, self.subreddit, _data=rule_data)
 
 
 class SubredditRules:
     """Provide a set of functions to a Subreddit's rules."""
 
-    def __getitem__(self, short_name: str) -> Rule:
-        """Lazily return the Rule for the subreddit with short_name ``short_name``.
+    def __getitem__(self, short_name: Union[str, int]) -> Rule:
+        """Return the Rule for the subreddit with short_name ``short_name``.
 
-        :param short_name: The short_name of the rule
+        :param short_name: The short_name of the rule, or the rule number.
+
+        .. note:: Rules fetched using a specific rule name are lazy loaded, so
+            you might have to access an attribute to get all of the expected
+            attributes.
 
         This method is to be used to fetch a specific rule, like so:
 
@@ -140,8 +150,26 @@ class SubredditRules:
            rule = reddit.subreddit('NAME').rules[rule_name]
            print(rule)
 
+        You can also fetch a numbered rule of a subreddit.
+
+        Rule numbers start at 0, so the first rule is at index 0, and the
+        second rule is at index 1, and so on.
+
+        If a rule of a specific number does not exist, an
+        :py:class:`IndexError` will be thrown.
+
+        .. note:: You can use negative indexes, such as -1 to get the last rule.
+
+        For example, to fetch the second rule of ``AskReddit``:
+
+        .. code-block:: python
+
+            rule = reddit.subreddit("AskReddit").rules[1]
+
         """
-        return Rule(self.subreddit._reddit, self.subreddit, short_name)
+        if isinstance(short_name, int):
+            return list(self)[short_name]
+        return Rule(self._reddit, self.subreddit, short_name)
 
     def __init__(self, subreddit: Subreddit):
         """Create a SubredditRules instance.
@@ -155,6 +183,8 @@ class SubredditRules:
     def __iter__(self) -> Generator[Rule, None, None]:
         """Return a list of rules for the subreddit.
 
+        :returns: A generator containing all of the rules of a subreddit.
+
         This method is used to discover all rules for a subreddit:
 
         .. code-block:: python
@@ -163,9 +193,28 @@ class SubredditRules:
                print(rule)
 
         """
-        return self.subreddit._reddit.get(
-            API_PATH["rules"].format(subreddit=self.subreddit)
-        )
+        for rule in self._make_rule_list(
+            self._reddit.get(
+                API_PATH["rules"].format(subreddit=self.subreddit)
+            )["rules"]
+        ):
+            yield rule
+
+    def _make_rule(self, data: Dict[str, str]) -> Rule:
+        """Make a rule object from a data dict.
+
+        :param data: The dictionary of attributes and values
+        :returns: An instance of :class:`.Rule`.
+        """
+        return Rule(self._reddit, self.subreddit, _data=data)
+
+    def _make_rule_list(self, data_list: List[Dict[str, str]]) -> List[Rule]:
+        """Convert a list of rule dicts to Rule objects.
+
+        :param data_list: The list of dictionaries
+        :returns: A list of instances of :class:`.Rule`.
+        """
+        return [self._make_rule(ruledata) for ruledata in data_list]
 
     def add(
         self,
@@ -178,7 +227,7 @@ class SubredditRules:
 
         :param short_name: The name of the rule.
         :param kind: The kind of item that the rule applies to. One of
-            ``submission``, ``comment``, or ``all``.
+            ``link``, ``comment``, or ``all``.
         :param description: The description for the rule. Optional.
         :param violation_reason: The reason that is shown on the report menu.
             If a violation reason is not specified, the short name will be used
@@ -204,6 +253,44 @@ class SubredditRules:
             if violation_reason is None
             else violation_reason,
         }
-        return self.subreddit._reddit.post(
-            API_PATH["add_subreddit_rule"], data=data
+        request_data = self._reddit.request(
+            "POST", API_PATH["add_subreddit_rule"], data=data
+        )
+        self._reddit._objector.objectify(request_data)
+        # We want any errors to be passed, but we don't want to use the
+        # objected value because it returns a LiveThread.
+        return self._make_rule(loads(request_data["json"]["data"]["rules"])[0])
+
+    def reorder(self, rule_list: List[Rule]) -> List[Rule]:
+        """Reorder the rules of a subreddit.
+
+        :param rule_list: The list of rules, in the wanted order. Each index of
+            the list indicates the position of the rule.
+        :returns: A list containing the rules in the specified order.
+
+        For example, to move the fourth rule to the first position, and then to
+        move the prior first rule to where the third rule originally was:
+
+        .. code-block:: python
+
+            subreddit = reddit.subreddit("subreddit")
+            rules = list(subreddit.rules)
+            new_rules = rules[3:4] + rules[1:3] + rules[0:1] + rules[4:]
+            # NOTE: Adding an upper bound returns a list
+            # Alternate: [rules[3]] + rules[1:3] + [rules[0]] + rules[4:]
+            new_rule_list = subreddit.rules.reorder(new_rules)
+
+        """
+        order_string = quote(
+            ",".join([str(item) for item in rule_list]), safe=","
+        )
+        data = {"r": str(self.subreddit), "new_rule_order": order_string}
+        request_data = self._reddit.request(
+            "POST", API_PATH["reorder_subreddit_rules"], data=data
+        )
+        self._reddit._objector.objectify(request_data)
+        # We want any errors to be passed, but we don't want to use the
+        # objected value because it returns a LiveThread.
+        return self._make_rule_list(
+            loads(request_data["json"]["data"]["rules"])
         )
