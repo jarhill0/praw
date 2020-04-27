@@ -13,6 +13,7 @@ Working with PRAW's Models
    models/more
    models/multireddit
    models/redditor
+   models/rule
    models/submission
    models/subreddit
    models/wikipage

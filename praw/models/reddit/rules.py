@@ -79,7 +79,7 @@ class Rule(RedditBase):
 
         .. code-block:: python
 
-           reddit.subreddit('NAME').rule['No spam'].delete()
+            reddit.subreddit('NAME').rule['No spam'].delete()
 
         """
         data = {"r": str(self.subreddit), "short_name": self.short_name}
@@ -107,9 +107,9 @@ class Rule(RedditBase):
 
         .. code-block:: python
 
-           reddit.subreddit('NAME').removal_reasons['No spam'].update(
-               description='Don't do this!',
-               violation_reason="Spam post')
+            reddit.subreddit('NAME').removal_reasons['No spam'].update(
+                description='Don't do this!',
+                violation_reason="Spam post')
 
         """
         data = {"r": str(self.subreddit), "old_short_name": self.short_name}
@@ -146,9 +146,9 @@ class SubredditRules:
 
         .. code-block:: python
 
-           rule_name = 'No spam'
-           rule = reddit.subreddit('NAME').rules[rule_name]
-           print(rule)
+            rule_name = 'No spam'
+            rule = reddit.subreddit('NAME').rules[rule_name]
+            print(rule)
 
         You can also fetch a numbered rule of a subreddit.
 

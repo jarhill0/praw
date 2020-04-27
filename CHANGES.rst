@@ -682,7 +682,7 @@ parameter as described below:
 
 **Added**
 
-* :meth:`.Subreddit.rules` to get the rules of a subreddit.
+* ``.Subreddit.rules`` to get the rules of a subreddit.
 * :class:`.LiveContributorRelationship`, which can be obtained through
   :attr:`.LiveThread.contributor`, to interact with live threads'
   contributors.
