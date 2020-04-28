@@ -381,6 +381,7 @@ class Reddit:
             "ModmailAction": models.ModmailAction,
             "ModmailConversation": models.ModmailConversation,
             "ModmailMessage": models.ModmailMessage,
+            "Rule": models.Rule,
             "Submenu": models.Submenu,
             "TrophyList": models.TrophyList,
             "UserList": models.RedditorList,
@@ -630,11 +631,7 @@ class Reddit:
         data = data or {}
         try:
             return self._objectify_request(
-                data=data,
-                files=files,
-                method="POST",
-                params=params,
-                path=path,
+                data=data, files=files, method="POST", params=params, path=path
             )
         except RedditAPIException as exception:
             seconds = self._handle_rate_limit(exception=exception)
@@ -668,7 +665,7 @@ class Reddit:
             of the request (default: None).
 
         """
-        return self._objectify_request(data=data, method="PUT", path=path,)
+        return self._objectify_request(data=data, method="PUT", path=path)
 
     def random_subreddit(self, nsfw: bool = False) -> Subreddit:
         """Return a random lazy instance of :class:`~.Subreddit`.

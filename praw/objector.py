@@ -1,5 +1,6 @@
 """Provides the Objector class."""
 
+from json import loads
 from typing import Any, Dict, List, Optional, TypeVar, Union
 
 from .exceptions import ClientException, RedditAPIException
@@ -155,9 +156,16 @@ class Objector:
                 # The URL is the URL to the submission, so it's removed.
                 del data["json"]["data"]["url"]
                 parser = self.parsers[self._reddit.config.kinds["submission"]]
+            if "rules" in data["json"]["data"]:
+                return self.objectify(loads(data["json"]["data"]["rules"]))
             else:
                 parser = self.parsers["LiveUpdateEvent"]
             return parser.parse(data["json"]["data"], self._reddit)
+        if "rules" in data:
+            return self.objectify(data["rules"])
+        if {"kind", "short_name"}.issubset(data):
+            parser = self.parsers["Rule"]
+            return parser.parse(data, self._reddit)
         if "json" in data and "errors" in data["json"]:
             errors = data["json"]["errors"]
             if len(errors) > 0:

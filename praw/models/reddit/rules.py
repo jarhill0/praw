@@ -1,11 +1,11 @@
 """Provide the Rule class."""
-from json import loads
-from typing import Dict, Generator, List, Optional, TypeVar, Union
+from typing import Dict, Iterator, List, Optional, TypeVar, Union
 from urllib.parse import quote
 
+from .base import RedditBase
 from ...const import API_PATH
 from ...exceptions import ClientException
-from .base import RedditBase
+from ...util.cache import cachedproperty
 
 _Rule = TypeVar("_Rule")
 Reddit = TypeVar("Reddit")
@@ -49,7 +49,7 @@ class Rule(RedditBase):
     def __init__(
         self,
         reddit: Reddit,
-        subreddit: Subreddit,
+        subreddit: Optional[Subreddit] = None,
         short_name: Optional[str] = None,
         _data: Optional[Dict[str, str]] = None,
     ):
@@ -57,10 +57,16 @@ class Rule(RedditBase):
         if (short_name, _data).count(None) != 1:
             raise ValueError("Either short_name or _data needs to be given.")
         self.short_name = short_name
+        # Note: The subreddit parameter can be None, because the objector
+        # does not know this info. In that case, it is the responsibility of
+        # the caller to set the `subreddit` property on the returned value.
         self.subreddit = subreddit
         super().__init__(reddit, _data=_data)
 
     def _fetch(self):
+        assert (
+            self.subreddit is not None
+        ), "Rule has unknown subreddit. Please file a bug with PRAW."
         for rule in self.subreddit.rules:
             if rule.short_name == self.short_name:
                 self.__dict__.update(rule.__dict__)
@@ -82,6 +88,9 @@ class Rule(RedditBase):
             reddit.subreddit('NAME').rule['No spam'].delete()
 
         """
+        assert (
+            self.subreddit is not None
+        ), "Rule has unknown subreddit. Please file a bug with PRAW."
         data = {"r": str(self.subreddit), "short_name": self.short_name}
         self._reddit.post(API_PATH["remove_subreddit_rule"], data=data)
 
@@ -91,7 +100,7 @@ class Rule(RedditBase):
         kind: Optional[str] = None,
         short_name: Optional[str] = None,
         violation_reason: Optional[str] = None,
-    ):
+    ) -> _Rule:
         """Update the rule from this subreddit.
 
         .. note:: Existing values will be used for any unspecified arguments.
@@ -111,6 +120,9 @@ class Rule(RedditBase):
                 violation_reason="Spam post")
 
         """
+        assert (
+            self.subreddit is not None
+        ), "Rule has unknown subreddit. Please file a bug with PRAW."
         data = {"r": str(self.subreddit), "old_short_name": self.short_name}
         for name, value in {
             "description": description,
@@ -119,14 +131,11 @@ class Rule(RedditBase):
             "violation_reason": violation_reason,
         }.items():
             data[name] = getattr(self, name) if value is None else value
-        updated_rule = self._reddit.request(
-            "POST", API_PATH["update_subreddit_rule"], data=data
+        updated_rule = self._reddit.post(
+            API_PATH["update_subreddit_rule"], data=data
         )
-        self._reddit._objector.objectify(updated_rule)
-        # We want any errors to be passed, but we don't want to use the
-        # objected value because it returns a LiveThread.
-        rule_data = loads(updated_rule["json"]["data"]["rules"])[0]
-        return Rule(self._reddit, self.subreddit, _data=rule_data)
+        updated_rule.subreddit = self.subreddit
+        return updated_rule
 
 
 class SubredditRules:
@@ -167,8 +176,10 @@ class SubredditRules:
 
         """
         if isinstance(short_name, int):
-            return list(self)[short_name]
-        return Rule(self._reddit, self.subreddit, short_name)
+            return self._rule_list[short_name]
+        return Rule(
+            self._reddit, subreddit=self.subreddit, short_name=short_name
+        )
 
     def __init__(self, subreddit: Subreddit):
         """Create a SubredditRules instance.
@@ -179,8 +190,8 @@ class SubredditRules:
         self.subreddit = subreddit
         self._reddit = subreddit._reddit
 
-    def __iter__(self) -> Generator[Rule, None, None]:
-        """Return a list of rules for the subreddit.
+    def __iter__(self) -> Iterator:
+        """Iterate through the rules of the subreddit.
 
         :returns: A generator containing all of the rules of a subreddit.
 
@@ -192,28 +203,20 @@ class SubredditRules:
                print(rule)
 
         """
-        for rule in self._make_rule_list(
-            self._reddit.get(
-                API_PATH["rules"].format(subreddit=self.subreddit)
-            )["rules"]
-        ):
-            yield rule
+        return iter(self._rule_list)
 
-    def _make_rule(self, data: Dict[str, str]) -> Rule:
-        """Make a rule object from a data dict.
+    @cachedproperty
+    def _rule_list(self) -> List[Rule]:
+        """Get a list of Rule objects.
 
-        :param data: The dictionary of attributes and values
-        :returns: An instance of :class:`.Rule`.
-        """
-        return Rule(self._reddit, self.subreddit, _data=data)
-
-    def _make_rule_list(self, data_list: List[Dict[str, str]]) -> List[Rule]:
-        """Convert a list of rule dicts to Rule objects.
-
-        :param data_list: The list of dictionaries
         :returns: A list of instances of :class:`.Rule`.
         """
-        return [self._make_rule(ruledata) for ruledata in data_list]
+        rule_list = self._reddit.get(
+            API_PATH["rules"].format(subreddit=self.subreddit)
+        )
+        for rule in rule_list:
+            rule.subreddit = self.subreddit
+        return rule_list
 
     def add(
         self,
@@ -252,13 +255,11 @@ class SubredditRules:
             if violation_reason is None
             else violation_reason,
         }
-        request_data = self._reddit.request(
-            "POST", API_PATH["add_subreddit_rule"], data=data
-        )
-        self._reddit._objector.objectify(request_data)
-        # We want any errors to be passed, but we don't want to use the
-        # objected value because it returns a LiveThread.
-        return self._make_rule(loads(request_data["json"]["data"]["rules"])[0])
+        new_rule = self._reddit.post(
+            API_PATH["add_subreddit_rule"], data=data
+        )[0]
+        new_rule.subreddit = self.subreddit
+        return new_rule
 
     def reorder(self, rule_list: List[Rule]) -> List[Rule]:
         """Reorder the rules of a subreddit.
@@ -283,12 +284,9 @@ class SubredditRules:
             ",".join([str(item) for item in rule_list]), safe=","
         )
         data = {"r": str(self.subreddit), "new_rule_order": order_string}
-        request_data = self._reddit.request(
-            "POST", API_PATH["reorder_subreddit_rules"], data=data
+        response = self._reddit.post(
+            API_PATH["reorder_subreddit_rules"], data=data
         )
-        self._reddit._objector.objectify(request_data)
-        # We want any errors to be passed, but we don't want to use the
-        # objected value because it returns a LiveThread.
-        return self._make_rule_list(
-            loads(request_data["json"]["data"]["rules"])
-        )
+        for rule in response:
+            rule.subreddit = self.subreddit
+        return response
