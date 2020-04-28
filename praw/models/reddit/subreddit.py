@@ -409,8 +409,8 @@ class Subreddit(
     def rules(self):
         """Provide an instance of :class:`.SubredditRules`.
 
-        Use this attribute for interacting with a subreddit's removal reasons.
-        For example, to list all the removal reasons for a subreddit:
+        Use this attribute for interacting with a subreddit's rules.
+        For example, to list all the rules for a subreddit:
 
         .. code-block:: python
 
@@ -418,7 +418,7 @@ class Subreddit(
                 print(rule)
 
         You can also add rules to the subreddit, if you are a moderator. For
-        example, to make a rule called ``No spam`` in the subreddit ``NAME``:
+        example, to make a rule called ``"No spam"`` in the subreddit ``"NAME"``:
 
         .. code-block:: python
 

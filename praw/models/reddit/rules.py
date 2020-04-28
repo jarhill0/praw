@@ -1,4 +1,4 @@
-"""Provide the Reason class."""
+"""Provide the Rule class."""
 from json import loads
 from typing import Dict, Generator, List, Optional, TypeVar, Union
 from urllib.parse import quote
@@ -30,8 +30,8 @@ class Rule(RedditBase):
                             `Unix Time`_.
     ``description``         The description of the rule, if provided, otherwise
                             a blank string.
-    ``kind``                The kind of rule. Can be `link`, `comment`,
-                            or `all`.
+    ``kind``                The kind of rule. Can be ``"link"``, ``comment"``,
+                            or ``"all"``.
     ``priority``            Represents where the rule is ranked. For example,
                             the first rule is at priority ``0``.
     ``short_name``          The name of the rule.
@@ -75,7 +75,7 @@ class Rule(RedditBase):
     def delete(self):
         """Delete a rule from this subreddit.
 
-        To delete ``No spam`` from the subreddit ``NAME`` try:
+        To delete ``"No spam"`` from the subreddit ``"NAME"`` try:
 
         .. code-block:: python
 
@@ -94,22 +94,21 @@ class Rule(RedditBase):
     ):
         """Update the rule from this subreddit.
 
-        .. note:: If values are not specified, the existing values will be used
-            to update the rule.
+        .. note:: Existing values will be used for any unspecified arguments.
 
         :param description: The new description for the rule. Can be empty.
         :param kind: The kind of item that the rule applies to. One of
-            ``link``, ``comment``, or ``all``.
+            ``"link"``, ``"comment"``, or ``"all"``.
         :param short_name: The name of the rule.
         :param violation_reason: The reason that is shown on the report menu.
 
-        To update ``No spam`` from the subreddit ``NAME`` try:
+        To update ``"No spam"`` from the subreddit ``"NAME"`` try:
 
         .. code-block:: python
 
-            reddit.subreddit('NAME').removal_reasons['No spam'].update(
-                description='Don't do this!',
-                violation_reason="Spam post')
+            reddit.subreddit("NAME").removal_reasons["No spam"].update(
+                description="Don't do this!",
+                violation_reason="Spam post")
 
         """
         data = {"r": str(self.subreddit), "old_short_name": self.short_name}
@@ -152,13 +151,13 @@ class SubredditRules:
 
         You can also fetch a numbered rule of a subreddit.
 
-        Rule numbers start at 0, so the first rule is at index 0, and the
-        second rule is at index 1, and so on.
+        Rule numbers start at ``0``, so the first rule is at index ``0``, and the
+        second rule is at index ``1``, and so on.
 
         If a rule of a specific number does not exist, an
         :py:class:`IndexError` will be thrown.
 
-        .. note:: You can use negative indexes, such as -1 to get the last rule.
+        .. note:: You can use negative indexes, such as ``-1``, to get the last rule.
 
         For example, to fetch the second rule of ``AskReddit``:
 
@@ -227,14 +226,14 @@ class SubredditRules:
 
         :param short_name: The name of the rule.
         :param kind: The kind of item that the rule applies to. One of
-            ``link``, ``comment``, or ``all``.
+            ``"link"``, ``"comment"``, or ``"all"``.
         :param description: The description for the rule. Optional.
         :param violation_reason: The reason that is shown on the report menu.
             If a violation reason is not specified, the short name will be used
             as the violation reason.
         :returns: The Rule added.
 
-        To add rule ``No spam`` to the subreddit ``NAME`` try:
+        To add rule ``"No spam"`` to the subreddit ``"NAME"`` try:
 
         .. code-block:: python
 
@@ -276,7 +275,6 @@ class SubredditRules:
             subreddit = reddit.subreddit("subreddit")
             rules = list(subreddit.rules)
             new_rules = rules[3:4] + rules[1:3] + rules[0:1] + rules[4:]
-            # NOTE: Adding an upper bound returns a list
             # Alternate: [rules[3]] + rules[1:3] + [rules[0]] + rules[4:]
             new_rule_list = subreddit.rules.reorder(new_rules)
 

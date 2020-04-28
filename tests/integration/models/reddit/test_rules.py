@@ -40,8 +40,10 @@ class TestRule(IntegrationTest):
     def test_delete_rule(self, _):
         self.reddit.read_only = False
         with self.recorder.use_cassette("TestRule.test_delete_rule"):
-            rule = self.subreddit.rules[-1]
+            rules = list(self.subreddit.rules)
+            rule = rules[-1]
             rule.delete()
+            assert len(list(self.subreddit.rules)) == (len(rules)-1)
 
     def test_get_rules(self):
         with self.recorder.use_cassette("TestRule.test_get_rules"):
@@ -70,7 +72,9 @@ class TestRule(IntegrationTest):
             reordered = rule_list[2:3] + rule_list[0:2] + rule_list[3:]
             rule_info = {rule.short_name: rule for rule in rule_list}
             self.subreddit.rules.reorder(reordered)
-            for rule in self.subreddit.rules:
+            new_rules = list(self.subreddit.rules)
+            assert new_rules != rule_list
+            for rule in new_rules:
                 assert rule_info[rule.short_name] == rule
 
     @mock.patch("time.sleep", return_value=None)
@@ -120,6 +124,8 @@ class TestRule(IntegrationTest):
             assert rule2.kind == "comment"
             assert rule.violation_reason != rule2.violation_reason
             assert rule2.violation_reason == "PUpdate"
+            for new_rule in self.subreddit.rules:
+                assert new_rule.short_name != rule.short_name
 
     @mock.patch("time.sleep", return_value=None)
     def test_update_rule_no_params(self, _):
