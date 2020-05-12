@@ -1,5 +1,4 @@
 """Provide the Emoji class."""
-import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from ...const import API_PATH
@@ -225,26 +224,10 @@ class SubredditEmoji:
            reddit.subreddit("praw_test").emoji.add("test", "test.png")
 
         """
-        data = {
-            "filepath": os.path.basename(image_path),
-            "mimetype": "image/jpeg",
-        }
-        if image_path.lower().endswith(".png"):
-            data["mimetype"] = "image/png"
-        url = API_PATH["emoji_lease"].format(subreddit=self.subreddit)
-
-        # until we learn otherwise, assume this request always succeeds
-        upload_lease = self._reddit.post(url, data=data)["s3UploadLease"]
-        upload_data = {
-            item["name"]: item["value"] for item in upload_lease["fields"]
-        }
-        upload_url = "https:{}".format(upload_lease["action"])
-
-        with open(image_path, "rb") as image:
-            response = self._reddit._core._requestor._http.post(
-                upload_url, data=upload_data, files={"file": image}
-            )
-        response.raise_for_status()
+        upload_data = self._reddit.bucket_upload(
+            url=API_PATH["emoji_lease"].format(subreddit=self.subreddit),
+            file_path=image_path,
+        )
 
         data = {
             "mod_flair_only": mod_flair_only,

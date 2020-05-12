@@ -6,10 +6,9 @@ from copy import deepcopy
 from csv import writer
 from io import StringIO
 from json import dumps, loads
-from os.path import basename, dirname, join
+from os.path import dirname, join
 from typing import List
 from urllib.parse import urljoin
-from xml.etree.ElementTree import XML
 
 import websocket
 from prawcore import Redirect
@@ -19,7 +18,6 @@ from ...exceptions import (
     ClientException,
     InvalidFlairTemplateID,
     RedditAPIException,
-    TooLargeMediaException,
     WebSocketException,
 )
 from ...util.cache import cachedproperty
@@ -550,18 +548,6 @@ class Subreddit(
         self.__dict__.update(other.__dict__)
         self._fetched = True
 
-    def _parse_xml_response(self, response):
-        """Parse the XML from a response and raise any errors found."""
-        xml = response.text
-        root = XML(xml)
-        tags = [element.tag for element in root]
-        if tags[:4] == ["Code", "Message", "ProposedSize", "MaxSizeAllowed"]:
-            # Returned if image is too big
-            code, message, actual, maximum_size = [
-                element.text for element in root[:4]
-            ]
-            raise TooLargeMediaException(int(maximum_size), int(actual))
-
     def _submit_media(self, data, timeout, without_websockets):
         """Submit and return an `image`, `video`, or `videogif`.
 
@@ -626,47 +612,16 @@ class Subreddit(
                 dirname(dirname(dirname(__file__))), "images", "PRAW logo.png"
             )
 
-        file_name = basename(media_path).lower()
-        file_extension = file_name.rpartition(".")[2]
-        mime_type = {
-            "png": "image/png",
-            "mov": "video/quicktime",
-            "mp4": "video/mp4",
-            "jpg": "image/jpeg",
-            "jpeg": "image/jpeg",
-            "gif": "image/gif",
-        }.get(
-            file_extension, "image/jpeg"
-        )  # default to JPEG
-        if (
-            expected_mime_prefix is not None
-            and mime_type.partition("/")[0] != expected_mime_prefix
-        ):
-            raise ClientException(
-                "Expected a mimetype starting with {!r} but got mimetype {!r} "
-                "(from file extension {!r}).".format(
-                    expected_mime_prefix, mime_type, file_extension
-                )
-            )
-        img_data = {"filepath": file_name, "mimetype": mime_type}
+        upload_data = self._reddit.bucket_upload(
+            url=API_PATH["media_asset"],
+            file_path=media_path,
+            expected_mime_prefix=expected_mime_prefix,
+            lease_key="args",
+        )
 
-        url = API_PATH["media_asset"]
-        # until we learn otherwise, assume this request always succeeds
-        upload_lease = self._reddit.post(url, data=img_data)["args"]
-        upload_url = "https:{}".format(upload_lease["action"])
-        upload_data = {
-            item["name"]: item["value"] for item in upload_lease["fields"]
-        }
-
-        with open(media_path, "rb") as media:
-            response = self._reddit._core._requestor._http.post(
-                upload_url, data=upload_data, files={"file": media}
-            )
-        if not response.ok:
-            self._parse_xml_response(response)
-        response.raise_for_status()
-
-        return upload_url + "/" + upload_data["key"]
+        return "https:{}/{}".format(
+            upload_data["lease"]["action"], upload_data["key"]
+        )
 
     def post_requirements(self):
         """Get the post requirements for a subreddit.
@@ -3116,27 +3071,15 @@ class SubredditStylesheet:
             return response
 
     def _upload_style_asset(self, image_path, image_type):
-        data = {"imagetype": image_type, "filepath": basename(image_path)}
-        data["mimetype"] = "image/jpeg"
-        if image_path.lower().endswith(".png"):
-            data["mimetype"] = "image/png"
-        url = API_PATH["style_asset_lease"].format(subreddit=self.subreddit)
+        upload_data = self.subreddit._reddit.bucket_upload(
+            url=API_PATH["style_asset_lease"].format(subreddit=self.subreddit),
+            file_path=image_path,
+            extra_data_values={"imagetype": image_type},
+        )
 
-        upload_lease = self.subreddit._reddit.post(url, data=data)[
-            "s3UploadLease"
-        ]
-        upload_data = {
-            item["name"]: item["value"] for item in upload_lease["fields"]
-        }
-        upload_url = "https:{}".format(upload_lease["action"])
-
-        with open(image_path, "rb") as image:
-            response = self.subreddit._reddit._core._requestor._http.post(
-                upload_url, data=upload_data, files={"file": image}
-            )
-        response.raise_for_status()
-
-        return "{}/{}".format(upload_url, upload_data["key"])
+        return "https:{}/{}".format(
+            upload_data["lease"]["action"], upload_data["key"]
+        )
 
     def delete_banner(self):
         """Remove the current subreddit (redesign) banner image.

@@ -1,6 +1,5 @@
 """Provide classes related to widgets."""
 
-import os.path
 from json import JSONEncoder, dumps
 
 from ...const import API_PATH
@@ -896,28 +895,13 @@ class SubredditWidgetsModeration:
            my_sub.widgets.mod.add_image_widget("My cool pictures", images,
                                                styles)
         """
-        img_data = {
-            "filepath": os.path.basename(file_path),
-            "mimetype": "image/jpeg",
-        }
-        if file_path.lower().endswith(".png"):
-            img_data["mimetype"] = "image/png"
-
-        url = API_PATH["widget_lease"].format(subreddit=self._subreddit)
-        # until we learn otherwise, assume this request always succeeds
-        upload_lease = self._reddit.post(url, data=img_data)["s3UploadLease"]
-        upload_data = {
-            item["name"]: item["value"] for item in upload_lease["fields"]
-        }
-        upload_url = "https:{}".format(upload_lease["action"])
-
-        with open(file_path, "rb") as image:
-            response = self._reddit._core._requestor._http.post(
-                upload_url, data=upload_data, files={"file": image}
-            )
-        response.raise_for_status()
-
-        return upload_url + "/" + upload_data["key"]
+        upload_data = self._reddit.bucket_upload(
+            url=API_PATH["widget_lease"].format(subreddit=self._subreddit),
+            file_path=file_path,
+        )
+        return "https:{}/{}".format(
+            upload_data["lease"]["action"], upload_data["key"]
+        )
 
 
 class Widget(PRAWBase):

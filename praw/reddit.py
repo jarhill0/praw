@@ -5,8 +5,10 @@ import re
 import time
 from itertools import islice
 from logging import getLogger
+from os.path import basename
 from typing import IO, Any, Dict, Generator, Iterable, Optional, Type, Union
 from warnings import warn
+from xml.etree.ElementTree import XML
 
 from prawcore import (
     Authorizer,
@@ -28,6 +30,7 @@ from .exceptions import (
     ClientException,
     MissingRequiredAttributeException,
     RedditAPIException,
+    TooLargeMediaException,
 )
 from .objector import Objector
 
@@ -369,6 +372,18 @@ class Reddit:
             update_check(__package__, __version__)
             Reddit.update_checked = True
 
+    def _parse_xml_response(self, response):
+        """Parse the XML from a response and raise any errors found."""
+        xml = response.text
+        root = XML(xml)
+        tags = [element.tag for element in root]
+        if tags[:4] == ["Code", "Message", "ProposedSize", "MaxSizeAllowed"]:
+            # Returned if image is too big
+            code, message, actual, maximum_size = [
+                element.text for element in root[:4]
+            ]
+            raise TooLargeMediaException(int(maximum_size), int(actual))
+
     def _prepare_objector(self):
         mappings = {
             self.config.kinds["comment"]: models.Comment,
@@ -458,6 +473,67 @@ class Reddit:
             self._core = self._authorized_core = session(authorizer)
         else:
             self._core = self._read_only_core
+
+    def bucket_upload(
+        self,
+        url,
+        file_path,
+        expected_mime_prefix=None,
+        extra_data_values=None,
+        lease_key="s3UploadLease",
+    ):
+        """Upload a file to an S3 bucket."""
+        file_name = basename(file_path).lower()
+        file_extension = file_name.rpartition(".")[2]
+        mime_type = {
+            "png": "image/png",
+            "mov": "video/quicktime",
+            "mp4": "video/mp4",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "gif": "image/gif",
+        }.get(
+            file_extension, "image/jpeg"
+        )  # default to JPEG
+
+        if (
+            expected_mime_prefix is not None
+            and mime_type.partition("/")[0] != expected_mime_prefix
+        ):
+            raise ClientException(
+                "Expected a mimetype starting with {!r} but got mimetype {!r} "
+                "(from file extension {!r}).".format(
+                    expected_mime_prefix, mime_type, file_extension
+                )
+            )
+
+        data = {"filepath": os.path.basename(file_path), "mimetype": mime_type}
+        if extra_data_values:
+            data.update(extra_data_values)
+
+        upload_lease = self.post(url, data=data)[lease_key]
+        upload_data = {
+            item["name"]: item["value"] for item in upload_lease["fields"]
+        }
+        upload_url = "https:{}".format(upload_lease["action"])
+
+        with open(file_path, "rb") as image:
+            response = self._core._requestor._http.post(
+                upload_url, data=upload_data, files={"file": image}
+            )
+        if not response.ok:
+            self._parse_xml_response(response)
+        response.raise_for_status()
+        # The response has the location of the item, which widgets needs.
+        # Getting that out requires either parsing XML (overkill?) or using
+        # a regular expression (highly incorrect). Alternatively, we can let
+        # the caller put together this URL from upload_data and the upload
+        # lease action.
+
+        # TODO: What does this return? Frankendict? the response? An
+        # injected class???
+        upload_data["lease"] = upload_lease
+        return upload_data
 
     def comment(
         self,  # pylint: disable=invalid-name
